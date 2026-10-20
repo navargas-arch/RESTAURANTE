@@ -40,7 +40,7 @@ def inicializar_bd():
         )
     ''')
 
-    # Mesas iniciales de prueba según el modelo
+    # Mesas iniciales de prueba
     cursor.execute("SELECT COUNT(*) FROM Mesa")
     if cursor.fetchone()[0] == 0:
         mesas_iniciales = [
@@ -54,13 +54,23 @@ def inicializar_bd():
     conn.commit()
     conn.close()
 
+def solicitar_campo_obligatorio(mensaje):
+    """Solicita un dato y si está vacío lanza un error y vuelve a pedirlo."""
+    while True:
+        valor = input(mensaje).strip()
+        if valor:
+            return valor
+        print("❌ ¡ERROR! Este campo es obligatorio y no puede quedar vacío. Vuelva a ingresarlo.\n")
+
 def crear_cuenta():
     """Formulario: Crear Cuenta"""
     print("\n--- FORMULARIO: CREAR CUENTA ---")
-    nombre = input("Nombre: ").strip()
-    documento = input("Documento: ").strip()
-    tel = input("Teléfono (# Tel): ").strip()
-    otro_contacto = input("Otro Contacto: ").strip()
+    nombre = solicitar_campo_obligatorio("Nombre: ")
+    documento = solicitar_campo_obligatorio("Documento: ")
+    tel = solicitar_campo_obligatorio("Teléfono (# Tel): ")
+    otro_contacto = input("Otro Contacto (Opcional): ").strip()
+    if not otro_contacto:
+        otro_contacto = "Ninguno"
 
     conn = sqlite3.connect('restaurante.db')
     cursor = conn.cursor()
@@ -87,23 +97,23 @@ def crear_cuenta():
 def iniciar_sesion():
     """Iniciar sesión mediante Documento de Identidad"""
     print("\n--- INICIAR SESIÓN ---")
-    documento = input("Ingrese su Documento de Identidad: ").strip()
+    while True:
+        documento = solicitar_campo_obligatorio("Ingrese su Documento de Identidad: ")
 
-    conn = sqlite3.connect('restaurante.db')
-    cursor = conn.cursor()
-    cursor.execute("SELECT id, nombre FROM Usuario WHERE documento = ?", (documento,))
-    usuario = cursor.fetchone()
-    conn.close()
+        conn = sqlite3.connect('restaurante.db')
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, nombre FROM Usuario WHERE documento = ?", (documento,))
+        usuario = cursor.fetchone()
+        conn.close()
 
-    if usuario:
-        print(f"\n¡Bienvenido/a de nuevo, {usuario[1]}!")
-        return usuario[0]
-    else:
-        print("\nUsuario no encontrado. Por favor cree una cuenta primero.")
-        return None
+        if usuario:
+            print(f"\n¡Bienvenido/a de nuevo, {usuario[1]}!")
+            return usuario[0]
+        else:
+            print("❌ ¡ERROR! Usuario no encontrado con ese documento. Intente de nuevo.\n")
 
 def obtener_mesas_disponibles():
-    """Obtiene y retorna la lista completa de mesas registradas."""
+    """Obtiene y retorna la lista completa de mesas."""
     conn = sqlite3.connect('restaurante.db')
     cursor = conn.cursor()
     cursor.execute('SELECT id, num_mesa, capacidad, ubicacion FROM Mesa')
@@ -112,7 +122,7 @@ def obtener_mesas_disponibles():
     return mesas
 
 def seleccionar_mesa(num_comensales):
-    """Muestra el catálogo de mesas y permite al usuario elegir una mesa apta."""
+    """Muestra las mesas y permite al usuario elegir una."""
     mesas = obtener_mesas_disponibles()
     
     print("\n--- MESAS REGISTRADAS EN EL RESTAURANTE ---")
@@ -137,30 +147,33 @@ def seleccionar_mesa(num_comensales):
             if opcion_id in mesas_validas:
                 return mesas_validas[opcion_id]
             else:
-                print("ID no válido o la mesa seleccionada no soporta esa cantidad de comensales. Intente de nuevo.")
+                print("❌ ¡ERROR! ID no válido o la mesa no soporta esa cantidad de comensales. Intente de nuevo.")
         except ValueError:
-            print("Por favor ingrese un número entero válido para el ID de la mesa.")
+            print("❌ ¡ERROR! Debe ingresar un número entero válido para el ID de la mesa.")
 
 def llenar_formulario_reserva(usuario_id):
-    """Formulario: Crear Reserva con Selección Manual de Mesa"""
+    """Formulario: Crear Reserva"""
     print("\n--- FORMULARIO: CREAR RESERVA ---")
-    fecha_hora = input("Fecha y Hora (Ej: 2026-11-01 20:00): ").strip()
+    fecha_hora = solicitar_campo_obligatorio("Fecha y Hora (Ej: 2026-11-01 20:00): ")
     
-    try:
-        num_comensales = int(input("Número de Comensales (# Comensales): "))
-    except ValueError:
-        print("El número de comensales debe ser un número entero.")
-        return
+    while True:
+        try:
+            num_comensales = int(solicitar_campo_obligatorio("Número de Comensales (# Comensales): "))
+            if num_comensales > 0:
+                break
+            print("❌ ¡ERROR! El número de comensales debe ser mayor a 0.\n")
+        except ValueError:
+            print("❌ ¡ERROR! Debe ingresar un número entero para los comensales.\n")
 
-    # Selección visual y manual de la mesa
     mesa_seleccionada = seleccionar_mesa(num_comensales)
     if not mesa_seleccionada:
         return
 
     fk_mesa, num_mesa, capacidad_mesa, ubicacion_mesa = mesa_seleccionada
-    observaciones = input("\nObservaciones: ").strip()
+    observaciones = input("\nObservaciones (Opcional): ").strip()
+    if not observaciones:
+        observaciones = "ninguna"
 
-    # Guardar Reserva en SQLite
     conn = sqlite3.connect('restaurante.db')
     cursor = conn.cursor()
     cursor.execute('''
@@ -179,6 +192,80 @@ def llenar_formulario_reserva(usuario_id):
     print(f"Comensales: {num_comensales}")
     print(f"Observaciones: {observaciones}")
     print("========================================")
+    print("¡Muchas gracias por realizar tu reserva con nosotros! Te esperamos con gusto.")
+
+def ver_mis_reservas(usuario_id):
+    """Consulta y muestra las reservas realizadas por el usuario actual"""
+    conn = sqlite3.connect('restaurante.db')
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT 
+            r.id, 
+            r.fecha_hora, 
+            m.num_mesa, 
+            m.ubicacion, 
+            r.num_comensales, 
+            r.observaciones
+        FROM Reserva r
+        INNER JOIN Mesa m ON r.fk_mesa = m.id
+        WHERE r.fk_usuario = ?
+        ORDER BY r.id DESC
+    ''', (usuario_id,))
+
+    reservas = cursor.fetchall()
+    conn.close()
+
+    print("\n========================================")
+    print("        MIS RESERVAS REALIZADAS         ")
+    print("========================================")
+
+    if not reservas:
+        print("No tienes reservas registradas hasta el momento.")
+        return []
+    else:
+        for res in reservas:
+            r_id, fecha, num_mesa, ubicacion, comensales, obs = res
+            print(f"ID Reserva  : {r_id}")
+            print(f"Fecha / Hora: {fecha}")
+            print(f"Mesa        : Mesa #{num_mesa} ({ubicacion})")
+            print(f"Comensales  : {comensales}")
+            print(f"Observaciones: {obs if obs else 'ninguna'}")
+            print("-" * 40)
+        return [r[0] for r in reservas]
+
+def cancelar_reserva(usuario_id):
+    """Permite al usuario cancelar una reserva existente por su ID"""
+    print("\n--- CANCELAR RESERVA ---")
+    ids_reservas_activas = ver_mis_reservas(usuario_id)
+
+    if not ids_reservas_activas:
+        return
+
+    while True:
+        try:
+            reserva_id = int(input("\nIngrese el ID de la reserva que desea cancelar (o 0 para volver): "))
+            if reserva_id == 0:
+                print("Operación cancelada.")
+                break
+            
+            if reserva_id in ids_reservas_activas:
+                confirmacion = input(f"¿Está seguro/a de que desea cancelar la reserva #{reserva_id}? (s/n): ").strip().lower()
+                if confirmacion == 's':
+                    conn = sqlite3.connect('restaurante.db')
+                    cursor = conn.cursor()
+                    cursor.execute("DELETE FROM Reserva WHERE id = ? AND fk_usuario = ?", (reserva_id, usuario_id))
+                    conn.commit()
+                    conn.close()
+                    print(f"\n✅ ¡La reserva #{reserva_id} ha sido cancelada exitosamente!")
+                    break
+                else:
+                    print("Cancelación de reserva abortada.")
+                    break
+            else:
+                print("❌ ¡ERROR! El ID ingresado no corresponde a ninguna de sus reservas activas. Intente de nuevo.")
+        except ValueError:
+            print("❌ ¡ERROR! Debe ingresar un número entero para el ID de la reserva.")
 
 def menu_principal():
     inicializar_bd()
@@ -189,7 +276,9 @@ def menu_principal():
         print("1. Crear Cuenta")
         print("2. Iniciar Sesión")
         print("3. Crear Reserva")
-        print("4. Salir")
+        print("4. Ver Mis Reservas")
+        print("5. Cancelar Reserva")
+        print("6. Salir")
         
         opcion = input("Seleccione una opción: ").strip()
 
@@ -206,14 +295,32 @@ def menu_principal():
         elif opcion == '3':
             if usuario_actual_id is None:
                 print("\nDebe Iniciar Sesión o Crear Cuenta primero para hacer una reserva.")
-            else:
+                usuario_actual_id = iniciar_sesion()
+            
+            if usuario_actual_id is not None:
                 llenar_formulario_reserva(usuario_actual_id)
 
         elif opcion == '4':
+            if usuario_actual_id is None:
+                print("\nDebe Iniciar Sesión primero para consultar sus reservas.")
+                usuario_actual_id = iniciar_sesion()
+            
+            if usuario_actual_id is not None:
+                ver_mis_reservas(usuario_actual_id)
+
+        elif opcion == '5':
+            if usuario_actual_id is None:
+                print("\nDebe Iniciar Sesión primero para cancelar una reserva.")
+                usuario_actual_id = iniciar_sesion()
+            
+            if usuario_actual_id is not None:
+                cancelar_reserva(usuario_actual_id)
+
+        elif opcion == '6':
             print("\n¡Gracias por utilizar el sistema de reservas!")
             break
         else:
-            print("\nOpción inválida. Intente de nuevo.")
+            print("\n❌ ¡ERROR! Opción inválida. Ingrese un número del 1 al 6.")
 
 if __name__ == "__main__":
     menu_principal()

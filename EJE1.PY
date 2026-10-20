@@ -75,7 +75,12 @@ def crear_cuenta():
         print(f"\n¡Cuenta creada exitosamente! ID de usuario asignado: {usuario_id}")
         return usuario_id
     except sqlite3.IntegrityError:
-        print("\nError: El documento ya está registrado.")
+        # Si el documento ya existe, consulta el ID del usuario existente para pasarlo directo a la reserva
+        cursor.execute("SELECT id, nombre FROM Usuario WHERE documento = ?", (documento,))
+        usuario = cursor.fetchone()
+        if usuario:
+            print(f"\nEl documento ya está registrado a nombre de: {usuario[1]}. Redirigiendo a crear reserva...")
+            return usuario[0]
         return None
     finally:
         conn.close()
@@ -145,3 +150,47 @@ def llenar_formulario_reserva(usuario_id):
 
     print("\n========================================")
     print("¡RESERVA REGISTRADA CON ÉXITO!")
+    print(f"ID Reserva: {reserva_id}")
+    print(f"Fecha/Hora: {fecha_hora}")
+    print(f"Mesa Asignada: #{num_mesa} ({ubicacion_mesa})")
+    print(f"Comensales: {num_comensales}")
+    print(f"Observaciones: {observaciones}")
+    print("========================================")
+
+def menu_principal():
+    inicializar_bd()
+    usuario_actual_id = None
+
+    while True:
+        print("\n=== SISTEMA DE RESERVAS DE RESTAURANTE ===")
+        print("1. Crear Cuenta")
+        print("2. Iniciar Sesión")
+        print("3. Crear Reserva")
+        print("4. Salir")
+        
+        opcion = input("Seleccione una opción: ").strip()
+
+        if opcion == '1':
+            usuario_actual_id = crear_cuenta()
+            if usuario_actual_id is not None:
+                llenar_formulario_reserva(usuario_actual_id)
+
+        elif opcion == '2':
+            usuario_actual_id = iniciar_sesion()
+            if usuario_actual_id is not None:
+                llenar_formulario_reserva(usuario_actual_id)
+
+        elif opcion == '3':
+            if usuario_actual_id is None:
+                print("\nDebe Iniciar Sesión o Crear Cuenta primero para hacer una reserva.")
+            else:
+                llenar_formulario_reserva(usuario_actual_id)
+
+        elif opcion == '4':
+            print("\n¡Gracias por utilizar el sistema de reservas!")
+            break
+        else:
+            print("\nOpción inválida. Intente de nuevo.")
+
+if __name__ == "__main__":
+    menu_principal()
